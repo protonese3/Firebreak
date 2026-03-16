@@ -15,6 +15,9 @@
     <a href="https://github.com/protonese3/Firebreak/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue.svg" alt="License"></a>
     <img src="https://img.shields.io/badge/rust-1.77+-orange.svg" alt="Rust">
     <img src="https://img.shields.io/badge/MCP-2025--03--26-green.svg" alt="MCP Protocol">
+    <img src="https://img.shields.io/badge/tools-20-blueviolet.svg" alt="20 Tools">
+    <img src="https://img.shields.io/badge/checks-32-red.svg" alt="32 Checks">
+    <img src="https://img.shields.io/badge/VCVD-47_patterns-yellow.svg" alt="47 VCVD Patterns">
   </p>
 </p>
 
@@ -41,7 +44,7 @@ Firebreak flips the problem. Instead of expecting developers to learn security t
 **What makes it different:**
 
 - **MCP-native** — not a CLI wrapper. Built from the ground up for AI tool calling.
-- **VCVD** — 40 vulnerability patterns specific to AI-generated code that traditional scanners miss.
+- **VCVD** — 47 vulnerability patterns specific to AI-generated code that traditional scanners miss.
 - **Proof over theory** — every finding includes the actual HTTP request/response that proves the vulnerability.
 - **Safe by design** — rate limited, scope-locked, non-destructive. Can't accidentally DROP your database.
 
@@ -174,9 +177,70 @@ These work with stored scan results. No external requests.
 
 ---
 
+## Scan Checks — 32 Security Checks
+
+Every scan runs a subset of these checks depending on the scan type (quick, full, targeted). Each check produces findings with full HTTP evidence.
+
+### Headers & TLS
+
+| Check | What it tests |
+|-------|--------------|
+| Security headers | HSTS, X-Content-Type-Options, X-Frame-Options, CSP presence |
+| CSP quality analysis | unsafe-inline, unsafe-eval, wildcard sources |
+| Permissions-Policy | Feature policy header presence and configuration |
+| Server version disclosure | Server, X-Powered-By, X-AspNet-Version headers |
+| Information header leaks | X-Debug-Token, X-Backend-Server, Via, X-Request-ID |
+| HTTPS enforcement | HTTP-to-HTTPS redirect chain analysis |
+| HSTS quality | max-age value, includeSubDomains, preload directives |
+| Advanced headers | Cross-Origin-Opener-Policy, Cross-Origin-Resource-Policy, Cross-Origin-Embedder-Policy |
+
+### Authentication & Session
+
+| Check | What it tests |
+|-------|--------------|
+| Cookie security | HttpOnly, Secure, SameSite flags on session cookies |
+| Missing auth on API endpoints | Unauthenticated access to protected routes |
+| Rate limiting detection | Login and API endpoint throttling |
+| HTTP method enumeration | TRACE, PUT, DELETE enabled on endpoints that shouldn't allow them |
+| Host header injection | Manipulated Host header reflected in responses or redirects |
+
+### Data & API
+
+| Check | What it tests |
+|-------|--------------|
+| Unauthenticated API discovery | Common API paths accessible without credentials |
+| Sequential ID detection | IDOR risk from predictable resource identifiers |
+| CORS misconfiguration | Origin reflection, null origin acceptance, wildcard with credentials |
+| Open redirect testing | Unvalidated redirect parameters in URLs |
+
+### Content & Frontend
+
+| Check | What it tests |
+|-------|--------------|
+| Technology fingerprinting | CMS detection, framework identification, server software |
+| Vulnerable JS libraries | jQuery, Angular, Bootstrap, Lodash with known CVEs |
+| Source map exposure | .map files accessible in production |
+| Secrets in JS bundles | API keys, tokens, credentials in client-side JavaScript |
+| Mixed content detection | HTTP resources loaded on HTTPS pages |
+| Form CSRF analysis | Forms missing CSRF tokens or using GET for state changes |
+
+### Recon & Discovery
+
+| Check | What it tests |
+|-------|--------------|
+| Web crawler | HTML links, JS endpoints, sitemap, robots.txt (recursive depth 3) |
+| Sensitive path probing | Admin panels, config files, backups (with content validation to eliminate false positives) |
+| robots.txt / sitemap.xml | Disallowed paths and sitemap endpoint analysis |
+| security.txt | RFC 9116 compliance and contact information |
+| Error page disclosure | Stack traces, debug info, internal paths in error responses |
+| Subdomain reference discovery | Subdomains referenced in HTML, JS, and headers |
+| Cache header security | Cache-Control, Pragma, Expires on sensitive responses |
+
+---
+
 ## VCVD — Vibe Coding Vulnerability Database
 
-40 vulnerability patterns that AI-generated code gets wrong. Traditional scanners don't look for these because they're specific to how LLMs write code.
+47 vulnerability patterns that AI-generated code gets wrong. Traditional scanners don't look for these because they're specific to how LLMs write code.
 
 ### Auth & Identity
 
@@ -306,10 +370,10 @@ firebreak/
 │   │
 │   ├── engine/                 # HTTP scanning engine
 │   │   ├── mod.rs              #   Scan orchestration (quick/full/targeted/replay)
-│   │   └── checks.rs           #   9 check types (headers, CORS, auth, IDOR, injection...)
+│   │   └── checks.rs           #   32 security checks (headers, TLS, auth, CORS, cookies, IDOR...)
 │   │
 │   ├── vcvd/                   # Vibe Coding Vulnerability Database
-│   │   └── data.rs             #   40 patterns with descriptions, detection, fixes
+│   │   └── data.rs             #   47 patterns with descriptions, detection, fixes
 │   │
 │   ├── store/                  # SQLite persistence
 │   │   └── mod.rs              #   CRUD for scans, findings, audit log
@@ -324,7 +388,7 @@ firebreak/
 │       └── mod.rs              #   JSON, Markdown, HTML, executive summary
 │
 ├── knowledge/
-│   └── best-practices/         # 7 security guides (JWT, RLS, CORS, uploads...)
+│   └── best-practices/         # 100 security guides (JWT, RLS, CORS, uploads, CSP...)
 │
 ├── frontend/                   # React dashboard (Vite + TypeScript + Tailwind)
 │
@@ -406,14 +470,22 @@ If you find a security vulnerability in Firebreak itself, please email **securit
 
 - [x] MCP server with JSON-RPC 2.0 over HTTP
 - [x] 20 MCP tools (knowledge, scan, analysis, report)
-- [x] VCVD v1 — 40 vulnerability patterns
-- [x] HTTP scanning engine with 9 check types
+- [x] VCVD v1 — 47 vulnerability patterns
+- [x] HTTP scanning engine with 32 security checks
 - [x] SQLite persistence
 - [x] Safety guardrails
 - [x] Report generation (JSON, Markdown, HTML)
 - [x] RLS policy analyzer (sqlparser-rs)
 - [x] Docker support
 - [x] CI/CD pipeline
+- [x] Web crawler for endpoint discovery
+- [x] False positive elimination (content validation, baseline comparison)
+- [x] Technology fingerprinting
+- [x] Cookie/session security analysis
+- [x] Form CSRF detection
+- [x] Open redirect testing
+- [x] CSP quality analysis
+- [x] Rate limiting detection
 
 ### Next
 
@@ -458,6 +530,10 @@ If you run Firebreak as a service for others, you must share your modifications.
 If you build a commercial service on top of Firebreak, the AGPL requires you to open-source your modifications. For internal and self-hosted use, no restrictions beyond the standard AGPL terms.
 
 ---
+
+<p align="center">
+  <code>20 Security Tools · 100 Best Practice Guides · 47 Vulnerability Patterns · 32 Scan Checks</code>
+</p>
 
 <p align="center">
   <strong>FIREBREAK</strong> — Because if you don't test it, someone else will.

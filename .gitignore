@@ -3,5 +3,12 @@
 *.swp
 *.swo
 data/*.db
-frontend/node_modules
-frontend/dist
+frontend/node_modules/
+frontend/dist/
+reports/
+*.db
+*.log
+prompts.md
+pro-coder.*
+image.png
+image copy.png

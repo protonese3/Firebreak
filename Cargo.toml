@@ -2,8 +2,20 @@
 name = "firebreak"
 version = "0.1.0"
 edition = "2021"
-description = "Security MCP server — pen testing and best practices as AI tools"
+description = "Security MCP server that turns your AI into a penetration tester"
 license = "AGPL-3.0"
+repository = "https://github.com/protonese3/Firebreak"
+homepage = "https://github.com/protonese3/Firebreak"
+readme = "README.md"
+keywords = ["security", "mcp", "penetration-testing", "vulnerability-scanner", "ai"]
+categories = ["command-line-utilities", "web-programming"]
+include = [
+    "src/**/*",
+    "knowledge/**/*",
+    "Cargo.toml",
+    "LICENSE",
+    "README.md",
+]
 
 [dependencies]
 axum = "0.8"
