@@ -213,8 +213,14 @@ async fn scan_quick(args: &Value, state: &AppState) -> ToolCallResult {
     let grade = ScanSummary::calculate_grade(critical, high, medium);
     let findings_text = format_findings(&findings);
 
+    let reachability_note = if findings.is_empty() {
+        "\n\nNote: No findings detected. The target may be unreachable, or no issues were found in the quick scan. Try a full scan for deeper analysis."
+    } else {
+        ""
+    };
+
     let output = format!(
-        "Scan started: {scan_id}\nTarget: {target_url}\nMode: black-box (quick)\n\nFound {} issues:\n\n{findings_text}\n\nSecurity Score: {grade}",
+        "Scan started: {scan_id}\nTarget: {target_url}\nMode: black-box (quick)\n\nFound {} issues:\n\n{findings_text}\n\nSecurity Score: {grade}{reachability_note}",
         findings.len()
     );
 
@@ -338,9 +344,17 @@ fn scan_status(args: &Value, state: &AppState) -> ToolCallResult {
         Err(e) => return error_result(&format!("Failed to get findings: {e}")),
     };
 
+    let (progress, phase) = if scan.status == ScanStatus::Completed {
+        (100, "done".to_string())
+    } else if scan.status == ScanStatus::Stopped {
+        (scan.progress, "stopped".to_string())
+    } else {
+        (scan.progress, scan.phase.clone())
+    };
+
     let output = format!(
-        "Scan: {scan_id}\nTarget: {}\nStatus: {}\nProgress: {}%\nPhase: {}\nFindings so far: {}",
-        scan.target_url, scan.status, scan.progress, scan.phase, findings.len()
+        "Scan: {scan_id}\nTarget: {}\nStatus: {}\nProgress: {progress}%\nPhase: {phase}\nFindings so far: {}",
+        scan.target_url, scan.status, findings.len()
     );
 
     text_result(&output)

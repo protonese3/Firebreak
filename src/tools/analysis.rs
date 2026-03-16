@@ -830,6 +830,58 @@ fn framework_fix_example(vcvd_id: &str, framework: &str) -> String {
              \treturn Item.objects.filter(owner=self.request.user)\n\
              ```\n\n",
         ),
+        ("VC-INFRA", "nextjs") => String::from(
+            "```javascript\n\
+             // next.config.js\n\
+             const securityHeaders = [\n\
+             \t{ key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },\n\
+             \t{ key: 'X-Content-Type-Options', value: 'nosniff' },\n\
+             \t{ key: 'X-Frame-Options', value: 'DENY' },\n\
+             \t{ key: 'Content-Security-Policy', value: \"default-src 'self'\" },\n\
+             ];\n\n\
+             module.exports = {\n\
+             \tasync headers() {\n\
+             \t\treturn [{ source: '/(.*)', headers: securityHeaders }];\n\
+             \t},\n\
+             };\n\
+             ```\n\n",
+        ),
+        ("VC-INFRA", "express") => String::from(
+            "```javascript\n\
+             const helmet = require('helmet');\n\
+             app.use(helmet());\n\
+             app.use(helmet.hsts({ maxAge: 63072000, includeSubDomains: true, preload: true }));\n\
+             app.use(helmet.contentSecurityPolicy({ directives: { defaultSrc: [\"'self'\"] } }));\n\
+             ```\n\n",
+        ),
+        ("VC-INFRA", "django") => String::from(
+            "```python\n\
+             # settings.py\n\
+             SECURE_HSTS_SECONDS = 63072000\n\
+             SECURE_HSTS_INCLUDE_SUBDOMAINS = True\n\
+             SECURE_HSTS_PRELOAD = True\n\
+             SECURE_CONTENT_TYPE_NOSNIFF = True\n\
+             X_FRAME_OPTIONS = 'DENY'\n\
+             CSP_DEFAULT_SRC = (\"'self'\",)\n\
+             ```\n\n",
+        ),
+        ("VC-INFRA", "flask") => String::from(
+            "```python\n\
+             from flask_talisman import Talisman\n\
+             Talisman(app, content_security_policy={'default-src': \"'self'\"})\n\
+             ```\n\n",
+        ),
+        ("VC-INFRA", "rails") => String::from(
+            "```ruby\n\
+             # config/environments/production.rb\n\
+             config.force_ssl = true\n\
+             config.action_dispatch.default_headers.merge!(\n\
+             \t'X-Frame-Options' => 'DENY',\n\
+             \t'X-Content-Type-Options' => 'nosniff',\n\
+             \t'Content-Security-Policy' => \"default-src 'self'\"\n\
+             )\n\
+             ```\n\n",
+        ),
         _ => format!(
             "No specific {framework} example available for {vcvd_id}. \
              Apply the general fix guidance above using your framework's idioms.\n\n",
