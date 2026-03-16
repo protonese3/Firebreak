@@ -1,4 +1,5 @@
 use crate::mcp::protocol::{Content, ToolCallResult, ToolDefinition};
+use crate::report;
 use crate::types::*;
 use crate::AppState;
 use chrono::Utc;
@@ -170,6 +171,40 @@ fn store_findings(state: &AppState, scan_id: &str, findings: &mut [Finding]) -> 
     Ok(())
 }
 
+fn save_report(scan_id: &str, target_url: &str, findings: &[Finding]) -> Option<String> {
+    let dir = std::path::Path::new("reports");
+    std::fs::create_dir_all(dir).ok()?;
+
+    let (critical, high, medium, low) = severity_counts(findings);
+    let grade = ScanSummary::calculate_grade(critical, high, medium);
+    let top_risks: Vec<String> = findings.iter().take(5).map(|f| f.title.clone()).collect();
+
+    let summary = ScanSummary {
+        scan_id: scan_id.to_string(),
+        target_url: target_url.to_string(),
+        grade,
+        critical,
+        high,
+        medium,
+        low,
+        total: findings.len(),
+        top_risks,
+    };
+
+    let md = report::generate_markdown(&summary, findings);
+
+    let host = url::Url::parse(target_url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.replace('.', "_")))
+        .unwrap_or_else(|| "unknown".into());
+    let ts = Utc::now().format("%Y%m%d_%H%M%S");
+    let filename = format!("{host}_{ts}.md");
+    let path = dir.join(&filename);
+
+    std::fs::write(&path, &md).ok()?;
+    Some(path.to_string_lossy().to_string())
+}
+
 pub async fn call(name: &str, args: &Value, state: &AppState) -> ToolCallResult {
     match name {
         "firebreak_scan_quick" => scan_quick(args, state).await,
@@ -214,13 +249,18 @@ async fn scan_quick(args: &Value, state: &AppState) -> ToolCallResult {
     let findings_text = format_findings(&findings);
 
     let reachability_note = if findings.is_empty() {
-        "\n\nNote: No findings detected. The target may be unreachable, or no issues were found in the quick scan. Try a full scan for deeper analysis."
+        "\n\nNote: No findings detected. The target may be unreachable, or no issues were found in the quick scan. Try a full scan for deeper analysis.".to_string()
     } else {
-        ""
+        String::new()
+    };
+
+    let report_note = match save_report(&scan_id, &target_url, &findings) {
+        Some(path) => format!("\n\nReport saved: {path}"),
+        None => String::new(),
     };
 
     let output = format!(
-        "Scan started: {scan_id}\nTarget: {target_url}\nMode: black-box (quick)\n\nFound {} issues:\n\n{findings_text}\n\nSecurity Score: {grade}{reachability_note}",
+        "Scan started: {scan_id}\nTarget: {target_url}\nMode: black-box (quick)\n\nFound {} issues:\n\n{findings_text}\n\nSecurity Score: {grade}{reachability_note}{report_note}",
         findings.len()
     );
 
@@ -272,8 +312,13 @@ async fn scan_full(args: &Value, state: &AppState) -> ToolCallResult {
     let grade = ScanSummary::calculate_grade(critical, high, medium);
     let findings_text = format_findings(&findings);
 
+    let report_note = match save_report(&scan_id, &target_url, &findings) {
+        Some(path) => format!("\n\nReport saved: {path}"),
+        None => String::new(),
+    };
+
     let output = format!(
-        "Scan started: {scan_id}\nTarget: {target_url}\nMode: {mode_str} (full)\n\nFound {} issues:\n\n{findings_text}\n\nSecurity Score: {grade}",
+        "Scan started: {scan_id}\nTarget: {target_url}\nMode: {mode_str} (full)\n\nFound {} issues:\n\n{findings_text}\n\nSecurity Score: {grade}{report_note}",
         findings.len()
     );
 
@@ -320,8 +365,13 @@ async fn scan_target(args: &Value, state: &AppState) -> ToolCallResult {
     let grade = ScanSummary::calculate_grade(critical, high, medium);
     let findings_text = format_findings(&findings);
 
+    let report_note = match save_report(&scan_id, &target_url, &findings) {
+        Some(path) => format!("\n\nReport saved: {path}"),
+        None => String::new(),
+    };
+
     let output = format!(
-        "Scan started: {scan_id}\nTarget: {target_url}\nFocus: {focus}\n\nFound {} issues:\n\n{findings_text}\n\nSecurity Score: {grade}",
+        "Scan started: {scan_id}\nTarget: {target_url}\nFocus: {focus}\n\nFound {} issues:\n\n{findings_text}\n\nSecurity Score: {grade}{report_note}",
         findings.len()
     );
 
