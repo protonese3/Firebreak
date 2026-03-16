@@ -12,6 +12,59 @@ async fn safe_get(client: &Client, url: &str, safety: &Safety) -> Option<reqwest
     client.get(url).send().await.ok()
 }
 
+async fn safe_get_with_body(client: &Client, url: &str, safety: &Safety) -> Option<(reqwest::StatusCode, String, String)> {
+    let resp = safe_get(client, url, safety).await?;
+    let status = resp.status();
+    let content_type = resp.headers().get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_lowercase();
+    let body = resp.text().await.unwrap_or_default();
+    Some((status, content_type, body))
+}
+
+fn validate_sensitive_path_content(path: &str, content_type: &str, body: &str) -> bool {
+    let body_lower = body.to_lowercase();
+    match path {
+        "/.env" => {
+            if content_type.contains("text/html") || content_type.contains("application/json") {
+                return false;
+            }
+            let env_line = regex::Regex::new(r"[A-Z_]+=").unwrap();
+            env_line.is_match(body)
+        }
+        "/.git/config" => {
+            if content_type.contains("text/html") || content_type.contains("application/json") {
+                return false;
+            }
+            body.contains("[core]") || body.contains("[remote")
+        }
+        "/admin" => {
+            if content_type.contains("application/json") {
+                return false;
+            }
+            let keywords = ["<form", "login", "password", "admin", "dashboard"];
+            keywords.iter().any(|kw| body_lower.contains(kw))
+        }
+        "/graphql" => {
+            if content_type.contains("application/json") {
+                let has_graphql_keys = body_lower.contains("\"data\"") || body_lower.contains("\"errors\"");
+                return has_graphql_keys;
+            }
+            body_lower.contains("graphql")
+        }
+        "/swagger" | "/api-docs" => {
+            body_lower.contains("swagger") || body_lower.contains("openapi")
+        }
+        "/debug" => {
+            let keywords = ["debug", "traceback", "stack trace", "stacktrace"];
+            keywords.iter().any(|kw| body_lower.contains(kw))
+        }
+        "/api" => true,
+        _ => true,
+    }
+}
+
 fn capture_response(resp: &reqwest::Response, method: &str, url: &str) -> HttpRecord {
     HttpRecord {
         method: method.to_string(),
@@ -79,17 +132,18 @@ pub async fn check_sensitive_paths(client: &Client, target: &str, safety: &Safet
     let mut findings = Vec::new();
     for path in &paths {
         let url = format!("{base}{path}");
-        let resp = match safe_get(client, &url, safety).await {
-            Some(r) => r,
+        let (status, content_type, body) = match safe_get_with_body(client, &url, safety).await {
+            Some(t) => t,
             None => continue,
         };
 
-        if resp.status().as_u16() != 200 {
+        if status.as_u16() != 200 {
             continue;
         }
 
-        let resp_rec = capture_response(&resp, "GET", &url);
-        let body = resp.text().await.unwrap_or_default();
+        if !validate_sensitive_path_content(path, &content_type, &body) {
+            continue;
+        }
 
         let (vcvd, severity, title, desc) = match *path {
             "/admin" => ("VC-INFRA-007", FindingSeverity::High, "Exposed admin panel", format!("Admin panel accessible at {url}")),
@@ -102,8 +156,13 @@ pub async fn check_sensitive_paths(client: &Client, target: &str, safety: &Safet
             _ => continue,
         };
 
-        let mut resp_with_body = resp_rec;
-        resp_with_body.body = Some(truncate_body(&body));
+        let resp_with_body = HttpRecord {
+            method: "GET".into(),
+            url: url.clone(),
+            headers: vec![("content-type".into(), content_type.clone())],
+            body: Some(truncate_body(&body)),
+            status: Some(status.as_u16()),
+        };
 
         findings.push(make_finding(
             vcvd,
@@ -113,7 +172,7 @@ pub async fn check_sensitive_paths(client: &Client, target: &str, safety: &Safet
             Evidence {
                 request: Some(request_record("GET", &url, &[])),
                 response: Some(resp_with_body),
-                detail: format!("{path} returned HTTP 200"),
+                detail: format!("{path} returned HTTP 200 with validated content"),
             },
             format!("Restrict access to {path} or remove it from production"),
         ));
@@ -437,20 +496,27 @@ pub async fn check_parameter_fuzzing(client: &Client, target: &str, safety: &Saf
 
     let mut findings = Vec::new();
     for path in &test_paths {
+        let baseline_url = format!("{base}{path}?q=test123");
+        let (baseline_status, _, baseline_body) = match safe_get_with_body(client, &baseline_url, safety).await {
+            Some(t) => (t.0.as_u16(), t.1, t.2),
+            None => continue,
+        };
+
         for (payload, attack_type, vcvd) in probes {
             let url = format!("{base}{path}?q={}", minimal_urlencode(payload));
-            let resp = match safe_get(client, &url, safety).await {
-                Some(r) => r,
+            let (status, _, body) = match safe_get_with_body(client, &url, safety).await {
+                Some(t) => (t.0.as_u16(), t.1, t.2),
                 None => continue,
             };
 
-            let status = resp.status().as_u16();
-            let resp_rec = capture_response(&resp, "GET", &url);
-            let body = resp.text().await.unwrap_or_default();
+            if status == baseline_status && status == 404 {
+                continue;
+            }
 
             if *attack_type == "xss" && body.contains(payload) {
-                let mut rr = resp_rec;
-                rr.body = Some(truncate_body(&body));
+                if baseline_body.contains(payload) {
+                    continue;
+                }
                 findings.push(make_finding(
                     vcvd,
                     FindingSeverity::High,
@@ -458,23 +524,58 @@ pub async fn check_parameter_fuzzing(client: &Client, target: &str, safety: &Saf
                     format!("Input reflected without sanitization at {url}"),
                     Evidence {
                         request: Some(request_record("GET", &url, &[])),
-                        response: Some(rr),
-                        detail: format!("Payload reflected in response (status {status})"),
+                        response: Some(HttpRecord {
+                            method: "GET".into(),
+                            url: url.clone(),
+                            headers: vec![],
+                            body: Some(truncate_body(&body)),
+                            status: Some(status),
+                        }),
+                        detail: format!("Payload reflected in response (status {status}, baseline {baseline_status})"),
                     },
                     "Sanitize user input before rendering. Use framework auto-escaping.".into(),
                 ));
                 break;
             }
 
+            if *attack_type == "template_injection" && payload.contains("7*7") && body.contains("49") {
+                if baseline_body.contains("49") {
+                    continue;
+                }
+                findings.push(make_finding(
+                    vcvd,
+                    FindingSeverity::High,
+                    format!("Potential template injection on {path}"),
+                    format!("Template expression evaluated when fuzzing {url}"),
+                    Evidence {
+                        request: Some(request_record("GET", &url, &[])),
+                        response: Some(HttpRecord {
+                            method: "GET".into(),
+                            url: url.clone(),
+                            headers: vec![],
+                            body: Some(truncate_body(&body)),
+                            status: Some(status),
+                        }),
+                        detail: format!("Evaluated result '49' found in response (status {status}, baseline {baseline_status})"),
+                    },
+                    "Use parameterized queries and strict input validation.".into(),
+                ));
+                break;
+            }
+
+            let baseline_has_sig = sig_regexes.iter().any(|(re, kind)| *kind == *attack_type && re.is_match(&baseline_body));
             let matched_sig = sig_regexes.iter().find(|(re, kind)| *kind == *attack_type && re.is_match(&body));
-            if matched_sig.is_some() {
+
+            if matched_sig.is_some() && !baseline_has_sig {
+                let status_differs = status != baseline_status;
+                if !status_differs && body == baseline_body {
+                    continue;
+                }
                 let severity = if *attack_type == "sql_injection" {
                     FindingSeverity::Critical
                 } else {
                     FindingSeverity::High
                 };
-                let mut rr = resp_rec;
-                rr.body = Some(truncate_body(&body));
                 findings.push(make_finding(
                     vcvd,
                     severity,
@@ -482,8 +583,14 @@ pub async fn check_parameter_fuzzing(client: &Client, target: &str, safety: &Saf
                     format!("Error signature detected when fuzzing {url}"),
                     Evidence {
                         request: Some(request_record("GET", &url, &[])),
-                        response: Some(rr),
-                        detail: format!("Error response triggered (status {status})"),
+                        response: Some(HttpRecord {
+                            method: "GET".into(),
+                            url: url.clone(),
+                            headers: vec![],
+                            body: Some(truncate_body(&body)),
+                            status: Some(status),
+                        }),
+                        detail: format!("Error response triggered (status {status}, baseline {baseline_status})"),
                     },
                     "Use parameterized queries and strict input validation.".into(),
                 ));
@@ -501,11 +608,18 @@ pub async fn check_frontend_exposure(client: &Client, target: &str, safety: &Saf
     let map_paths = ["/main.js.map", "/app.js.map", "/bundle.js.map", "/static/js/main.js.map"];
     for path in &map_paths {
         let url = format!("{base}{path}");
-        let resp = match safe_get(client, &url, safety).await {
-            Some(r) => r,
+        let (status, content_type, body) = match safe_get_with_body(client, &url, safety).await {
+            Some(t) => t,
             None => continue,
         };
-        if resp.status().as_u16() != 200 {
+        if status.as_u16() != 200 {
+            continue;
+        }
+        if content_type.contains("text/html") {
+            continue;
+        }
+        let trimmed = body.trim_start();
+        if !trimmed.starts_with('{') || !body.contains("\"mappings\"") {
             continue;
         }
         findings.push(make_finding(
@@ -515,8 +629,14 @@ pub async fn check_frontend_exposure(client: &Client, target: &str, safety: &Saf
             format!("JavaScript source map accessible at {url}"),
             Evidence {
                 request: Some(request_record("GET", &url, &[])),
-                response: Some(capture_response(&resp, "GET", &url)),
-                detail: format!("{path} returned HTTP 200"),
+                response: Some(HttpRecord {
+                    method: "GET".into(),
+                    url: url.clone(),
+                    headers: vec![("content-type".into(), content_type.clone())],
+                    body: Some(truncate_body(&body)),
+                    status: Some(status.as_u16()),
+                }),
+                detail: format!("{path} returned HTTP 200 with valid source map content"),
             },
             "Remove source maps from production or restrict access.".into(),
         ));
@@ -609,20 +729,27 @@ pub async fn check_parameter_fuzzing_urls(client: &Client, urls: &[String], safe
             None => (base_url.as_str(), None),
         };
 
+        let baseline_url = format!("{path_part}?q=test123");
+        let (baseline_status, _, baseline_body) = match safe_get_with_body(client, &baseline_url, safety).await {
+            Some(t) => (t.0.as_u16(), t.1, t.2),
+            None => continue,
+        };
+
         for (payload, attack_type, vcvd) in probes {
             let url = format!("{}?q={}", path_part, minimal_urlencode(payload));
-            let resp = match safe_get(client, &url, safety).await {
-                Some(r) => r,
+            let (status, _, body) = match safe_get_with_body(client, &url, safety).await {
+                Some(t) => (t.0.as_u16(), t.1, t.2),
                 None => continue,
             };
 
-            let status = resp.status().as_u16();
-            let resp_rec = capture_response(&resp, "GET", &url);
-            let body = resp.text().await.unwrap_or_default();
+            if status == baseline_status && status == 404 {
+                continue;
+            }
 
             if *attack_type == "xss" && body.contains(payload) {
-                let mut rr = resp_rec;
-                rr.body = Some(truncate_body(&body));
+                if baseline_body.contains(payload) {
+                    continue;
+                }
                 findings.push(make_finding(
                     vcvd,
                     FindingSeverity::High,
@@ -630,23 +757,58 @@ pub async fn check_parameter_fuzzing_urls(client: &Client, urls: &[String], safe
                     format!("Input reflected without sanitization at {url}"),
                     Evidence {
                         request: Some(request_record("GET", &url, &[])),
-                        response: Some(rr),
-                        detail: format!("Payload reflected in response (status {status})"),
+                        response: Some(HttpRecord {
+                            method: "GET".into(),
+                            url: url.clone(),
+                            headers: vec![],
+                            body: Some(truncate_body(&body)),
+                            status: Some(status),
+                        }),
+                        detail: format!("Payload reflected in response (status {status}, baseline {baseline_status})"),
                     },
                     "Sanitize user input before rendering. Use framework auto-escaping.".into(),
                 ));
                 break;
             }
 
+            if *attack_type == "template_injection" && payload.contains("7*7") && body.contains("49") {
+                if baseline_body.contains("49") {
+                    continue;
+                }
+                findings.push(make_finding(
+                    vcvd,
+                    FindingSeverity::High,
+                    format!("Potential template injection on {path_part}"),
+                    format!("Template expression evaluated when fuzzing {url}"),
+                    Evidence {
+                        request: Some(request_record("GET", &url, &[])),
+                        response: Some(HttpRecord {
+                            method: "GET".into(),
+                            url: url.clone(),
+                            headers: vec![],
+                            body: Some(truncate_body(&body)),
+                            status: Some(status),
+                        }),
+                        detail: format!("Evaluated result '49' found in response (status {status}, baseline {baseline_status})"),
+                    },
+                    "Use parameterized queries and strict input validation.".into(),
+                ));
+                break;
+            }
+
+            let baseline_has_sig = sig_regexes.iter().any(|(re, kind)| *kind == *attack_type && re.is_match(&baseline_body));
             let matched_sig = sig_regexes.iter().find(|(re, kind)| *kind == *attack_type && re.is_match(&body));
-            if matched_sig.is_some() {
+
+            if matched_sig.is_some() && !baseline_has_sig {
+                let status_differs = status != baseline_status;
+                if !status_differs && body == baseline_body {
+                    continue;
+                }
                 let severity = if *attack_type == "sql_injection" {
                     FindingSeverity::Critical
                 } else {
                     FindingSeverity::High
                 };
-                let mut rr = resp_rec;
-                rr.body = Some(truncate_body(&body));
                 findings.push(make_finding(
                     vcvd,
                     severity,
@@ -654,8 +816,14 @@ pub async fn check_parameter_fuzzing_urls(client: &Client, urls: &[String], safe
                     format!("Error signature detected when fuzzing {url}"),
                     Evidence {
                         request: Some(request_record("GET", &url, &[])),
-                        response: Some(rr),
-                        detail: format!("Error response triggered (status {status})"),
+                        response: Some(HttpRecord {
+                            method: "GET".into(),
+                            url: url.clone(),
+                            headers: vec![],
+                            body: Some(truncate_body(&body)),
+                            status: Some(status),
+                        }),
+                        detail: format!("Error response triggered (status {status}, baseline {baseline_status})"),
                     },
                     "Use parameterized queries and strict input validation.".into(),
                 ));
