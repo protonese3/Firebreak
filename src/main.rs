@@ -19,10 +19,18 @@ pub struct AppState {
     pub safety: safety::Safety,
 }
 
-fn init_state() -> Arc<AppState> {
-    std::fs::create_dir_all("data").ok();
+fn data_dir() -> std::path::PathBuf {
+    let exe = std::env::current_exe().unwrap_or_default();
+    let base = exe.parent().unwrap_or(std::path::Path::new("."));
+    let dir = base.join("data");
+    std::fs::create_dir_all(&dir).ok();
+    dir
+}
 
-    let store = store::Store::new("data/firebreak.db")
+fn init_state() -> Arc<AppState> {
+    let db_path = data_dir().join("firebreak.db");
+
+    let store = store::Store::new(db_path.to_str().unwrap_or("data/firebreak.db"))
         .expect("Failed to initialize database");
     let engine = engine::Engine::new();
     let safety = safety::Safety::new(10);

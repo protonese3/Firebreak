@@ -172,8 +172,10 @@ fn store_findings(state: &AppState, scan_id: &str, findings: &mut [Finding]) -> 
 }
 
 fn save_report(scan_id: &str, target_url: &str, findings: &[Finding]) -> Option<String> {
-    let dir = std::path::Path::new("reports");
-    std::fs::create_dir_all(dir).ok()?;
+    let exe = std::env::current_exe().unwrap_or_default();
+    let base = exe.parent().unwrap_or(std::path::Path::new("."));
+    let dir = base.join("reports");
+    std::fs::create_dir_all(&dir).ok()?;
 
     let (critical, high, medium, low) = severity_counts(findings);
     let grade = ScanSummary::calculate_grade(critical, high, medium);
