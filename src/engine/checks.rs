@@ -571,6 +571,101 @@ pub async fn check_frontend_exposure(client: &Client, target: &str, safety: &Saf
     findings
 }
 
+pub async fn check_parameter_fuzzing_urls(client: &Client, urls: &[String], safety: &Safety) -> Vec<Finding> {
+    let interesting: Vec<&String> = urls.iter()
+        .filter(|u| {
+            u.contains("/api/") || u.contains("/api?") || u.contains('?')
+                || u.contains("/search") || u.contains("/query")
+                || u.contains("/graphql") || u.contains("/v1/") || u.contains("/v2/")
+        })
+        .take(20)
+        .collect();
+
+    let probes: &[(&str, &str, &str)] = &[
+        ("'", "sql_injection", "VC-INJ-001"),
+        ("\"", "sql_injection", "VC-INJ-001"),
+        ("<script>alert(1)</script>", "xss", "VC-INJ-002"),
+        ("{{7*7}}", "template_injection", "VC-INJ-007"),
+        ("${7*7}", "template_injection", "VC-INJ-007"),
+        ("../../../etc/passwd", "path_traversal", "VC-INJ-005"),
+    ];
+
+    let error_sigs: &[(&str, &str)] = &[
+        (r"(?i)(sql|mysql|postgresql|sqlite)\s*(error|syntax|exception)", "sql_injection"),
+        (r"(?i)you have an error in your sql syntax", "sql_injection"),
+        (r"(?i)unclosed quotation mark", "sql_injection"),
+        (r"49", "template_injection"),
+        (r"root:.*:0:0:", "path_traversal"),
+    ];
+
+    let sig_regexes: Vec<(regex::Regex, &str)> = error_sigs.iter()
+        .filter_map(|(pat, kind)| regex::Regex::new(pat).ok().map(|r| (r, *kind)))
+        .collect();
+
+    let mut findings = Vec::new();
+    for base_url in &interesting {
+        let (path_part, _existing_query) = match base_url.split_once('?') {
+            Some((p, q)) => (p, Some(q)),
+            None => (base_url.as_str(), None),
+        };
+
+        for (payload, attack_type, vcvd) in probes {
+            let url = format!("{}?q={}", path_part, minimal_urlencode(payload));
+            let resp = match safe_get(client, &url, safety).await {
+                Some(r) => r,
+                None => continue,
+            };
+
+            let status = resp.status().as_u16();
+            let resp_rec = capture_response(&resp, "GET", &url);
+            let body = resp.text().await.unwrap_or_default();
+
+            if *attack_type == "xss" && body.contains(payload) {
+                let mut rr = resp_rec;
+                rr.body = Some(truncate_body(&body));
+                findings.push(make_finding(
+                    vcvd,
+                    FindingSeverity::High,
+                    format!("Reflected XSS on {path_part}"),
+                    format!("Input reflected without sanitization at {url}"),
+                    Evidence {
+                        request: Some(request_record("GET", &url, &[])),
+                        response: Some(rr),
+                        detail: format!("Payload reflected in response (status {status})"),
+                    },
+                    "Sanitize user input before rendering. Use framework auto-escaping.".into(),
+                ));
+                break;
+            }
+
+            let matched_sig = sig_regexes.iter().find(|(re, kind)| *kind == *attack_type && re.is_match(&body));
+            if matched_sig.is_some() {
+                let severity = if *attack_type == "sql_injection" {
+                    FindingSeverity::Critical
+                } else {
+                    FindingSeverity::High
+                };
+                let mut rr = resp_rec;
+                rr.body = Some(truncate_body(&body));
+                findings.push(make_finding(
+                    vcvd,
+                    severity,
+                    format!("Potential {} on {path_part}", attack_type.replace('_', " ")),
+                    format!("Error signature detected when fuzzing {url}"),
+                    Evidence {
+                        request: Some(request_record("GET", &url, &[])),
+                        response: Some(rr),
+                        detail: format!("Error response triggered (status {status})"),
+                    },
+                    "Use parameterized queries and strict input validation.".into(),
+                ));
+                break;
+            }
+        }
+    }
+    findings
+}
+
 fn minimal_urlencode(input: &str) -> String {
     let mut out = String::with_capacity(input.len() * 3);
     for b in input.bytes() {

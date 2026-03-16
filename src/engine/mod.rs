@@ -1,8 +1,10 @@
 mod checks;
+pub mod crawler;
 
 use crate::safety::Safety;
 use crate::types::*;
 use reqwest::Client;
+use std::collections::HashSet;
 
 pub struct Engine {
     client: Client,
@@ -29,10 +31,24 @@ impl Engine {
     }
 
     pub async fn full_scan(&self, target: &str, config: &ScanConfig, safety: &Safety) -> Vec<Finding> {
+        let discovered = crawler::crawl(&self.client, target, safety).await;
+
         let mut findings = self.quick_scan(target, safety).await;
+
+        for url in &discovered {
+            findings.extend(checks::check_security_headers(&self.client, url, safety).await);
+            findings.extend(checks::check_info_disclosure(&self.client, url, safety).await);
+        }
+
+        dedup_findings(&mut findings);
+
         findings.extend(checks::check_auth_endpoints(&self.client, target, config, safety).await);
         findings.extend(checks::check_idor(&self.client, target, config, safety).await);
-        findings.extend(checks::check_info_disclosure(&self.client, target, safety).await);
+
+        findings.extend(checks::check_parameter_fuzzing_urls(&self.client, &discovered, safety).await);
+
+        findings.extend(checks::check_frontend_exposure(&self.client, target, safety).await);
+
         findings
     }
 
@@ -40,10 +56,19 @@ impl Engine {
         match focus {
             "auth" => checks::check_auth_endpoints(&self.client, target, config, safety).await,
             "api" => {
+                let discovered = crawler::crawl(&self.client, target, safety).await;
+                let api_urls: Vec<String> = discovered.iter()
+                    .filter(|u| u.contains("/api"))
+                    .cloned()
+                    .collect();
                 let mut findings = Vec::new();
                 findings.extend(checks::check_sensitive_paths(&self.client, target, safety).await);
                 findings.extend(checks::check_auth_endpoints(&self.client, target, config, safety).await);
-                findings.extend(checks::check_info_disclosure(&self.client, target, safety).await);
+                for url in &api_urls {
+                    findings.extend(checks::check_info_disclosure(&self.client, url, safety).await);
+                }
+                findings.extend(checks::check_parameter_fuzzing_urls(&self.client, &api_urls, safety).await);
+                dedup_findings(&mut findings);
                 findings
             }
             "infra" => {
@@ -157,4 +182,12 @@ fn make_finding(
         fix_suggestion,
         verified: true,
     }
+}
+
+fn dedup_findings(findings: &mut Vec<Finding>) {
+    let mut seen = HashSet::new();
+    findings.retain(|f| {
+        let url = f.evidence.request.as_ref().map(|r| r.url.as_str()).unwrap_or("");
+        seen.insert((f.vcvd_id.clone(), url.to_string()))
+    });
 }
