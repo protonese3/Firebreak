@@ -467,7 +467,7 @@ pub async fn check_parameter_fuzzing(client: &Client, target: &str, safety: &Saf
             }
 
             let matched_sig = sig_regexes.iter().find(|(re, kind)| *kind == *attack_type && re.is_match(&body));
-            if let Some(_) = matched_sig {
+            if matched_sig.is_some() {
                 let severity = if *attack_type == "sql_injection" {
                     FindingSeverity::Critical
                 } else {

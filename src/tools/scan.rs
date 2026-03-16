@@ -162,7 +162,7 @@ fn create_scan_record(target_url: &str, mode: ScanMode) -> Scan {
     }
 }
 
-fn store_findings(state: &AppState, scan_id: &str, findings: &mut Vec<Finding>) -> Result<(), String> {
+fn store_findings(state: &AppState, scan_id: &str, findings: &mut [Finding]) -> Result<(), String> {
     for finding in findings.iter_mut() {
         finding.scan_id = scan_id.to_string();
         state.store.add_finding(finding)?;

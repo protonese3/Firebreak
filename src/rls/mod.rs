@@ -118,6 +118,7 @@ fn set_expr_has_select_star(expr: &SetExpr) -> bool {
 
 fn check_select_star_in_views_and_functions(stmts: &[Statement]) -> Vec<RlsFinding> {
     let mut findings = Vec::new();
+    let select_star_re = Regex::new(r"(?i)\bSELECT\s+\*").unwrap();
 
     for stmt in stmts {
         match stmt {
@@ -144,8 +145,7 @@ fn check_select_star_in_views_and_functions(stmts: &[Statement]) -> Vec<RlsFindi
                     None => None,
                 };
                 if let Some(body) = body_sql {
-                    let re = Regex::new(r"(?i)\bSELECT\s+\*").unwrap();
-                    if re.is_match(body) {
+                    if select_star_re.is_match(body) {
                         let n = table_name_str(name);
                         findings.push(RlsFinding {
                             vcvd_id: "VC-DATA-004".into(),
