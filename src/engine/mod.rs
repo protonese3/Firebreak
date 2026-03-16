@@ -27,6 +27,9 @@ impl Engine {
         findings.extend(checks::check_sensitive_paths(&self.client, target, safety).await);
         findings.extend(checks::check_cors(&self.client, target, safety).await);
         findings.extend(checks::check_tls_redirect(&self.client, target, safety).await);
+        findings.extend(checks::check_server_version(&self.client, target, safety).await);
+        findings.extend(checks::check_null_origin_cors(&self.client, target, safety).await);
+        findings.extend(checks::check_permissions_policy(&self.client, target, safety).await);
         findings
     }
 
@@ -49,6 +52,11 @@ impl Engine {
 
         findings.extend(checks::check_frontend_exposure(&self.client, target, safety).await);
 
+        findings.extend(checks::check_api_exposure(&self.client, target, safety).await);
+        findings.extend(checks::check_sequential_ids(&self.client, target, safety).await);
+        findings.extend(checks::check_robots_sitemap(&self.client, target, safety).await);
+
+        dedup_findings(&mut findings);
         findings
     }
 
@@ -68,6 +76,8 @@ impl Engine {
                     findings.extend(checks::check_info_disclosure(&self.client, url, safety).await);
                 }
                 findings.extend(checks::check_parameter_fuzzing_urls(&self.client, &api_urls, safety).await);
+                findings.extend(checks::check_api_exposure(&self.client, target, safety).await);
+                findings.extend(checks::check_sequential_ids(&self.client, target, safety).await);
                 dedup_findings(&mut findings);
                 findings
             }
@@ -76,6 +86,10 @@ impl Engine {
                 findings.extend(checks::check_security_headers(&self.client, target, safety).await);
                 findings.extend(checks::check_cors(&self.client, target, safety).await);
                 findings.extend(checks::check_tls_redirect(&self.client, target, safety).await);
+                findings.extend(checks::check_server_version(&self.client, target, safety).await);
+                findings.extend(checks::check_null_origin_cors(&self.client, target, safety).await);
+                findings.extend(checks::check_permissions_policy(&self.client, target, safety).await);
+                findings.extend(checks::check_robots_sitemap(&self.client, target, safety).await);
                 findings
             }
             "injection" => checks::check_parameter_fuzzing(&self.client, target, safety).await,
@@ -186,8 +200,5 @@ fn make_finding(
 
 fn dedup_findings(findings: &mut Vec<Finding>) {
     let mut seen = HashSet::new();
-    findings.retain(|f| {
-        let url = f.evidence.request.as_ref().map(|r| r.url.as_str()).unwrap_or("");
-        seen.insert((f.vcvd_id.clone(), url.to_string()))
-    });
+    findings.retain(|f| seen.insert(f.vcvd_id.clone()));
 }

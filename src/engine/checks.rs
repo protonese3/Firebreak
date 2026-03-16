@@ -666,6 +666,320 @@ pub async fn check_parameter_fuzzing_urls(client: &Client, urls: &[String], safe
     findings
 }
 
+pub async fn check_server_version(client: &Client, target: &str, safety: &Safety) -> Vec<Finding> {
+    let resp = match safe_get(client, target, safety).await {
+        Some(r) => r,
+        None => return vec![],
+    };
+
+    let req_rec = request_record("GET", target, &[]);
+    let resp_rec = capture_response(&resp, "GET", target);
+    let mut findings = Vec::new();
+
+    let server_re = regex::Regex::new(r"(?i)(nginx|apache|gunicorn|iis|tomcat|jetty|caddy|lighttpd)/[\d.]+").unwrap();
+
+    if let Some(server_val) = resp.headers().get("server").and_then(|v| v.to_str().ok()) {
+        if server_re.is_match(server_val) {
+            findings.push(make_finding(
+                "VC-INFRA-001",
+                FindingSeverity::Low,
+                format!("Server version disclosure: {server_val}"),
+                format!("Server header at {target} reveals version: {server_val}"),
+                Evidence {
+                    request: Some(req_rec.clone()),
+                    response: Some(resp_rec.clone()),
+                    detail: format!("Server header: {server_val}"),
+                },
+                "Remove version information from the Server header. For nginx: server_tokens off; For Apache: ServerTokens Prod".into(),
+            ));
+        }
+    }
+
+    if let Some(powered) = resp.headers().get("x-powered-by").and_then(|v| v.to_str().ok()) {
+        findings.push(make_finding(
+            "VC-INFRA-001",
+            FindingSeverity::Low,
+            format!("Server version disclosure: {powered}"),
+            format!("X-Powered-By header at {target} reveals technology: {powered}"),
+            Evidence {
+                request: Some(req_rec),
+                response: Some(resp_rec),
+                detail: format!("X-Powered-By header: {powered}"),
+            },
+            "Remove the X-Powered-By header from responses.".into(),
+        ));
+    }
+
+    findings
+}
+
+pub async fn check_null_origin_cors(client: &Client, target: &str, safety: &Safety) -> Vec<Finding> {
+    if !safety.check_scope(target) {
+        return vec![];
+    }
+    safety.acquire_rate_limit().await;
+    safety.log_action("http_request", target, "CORS probe with null origin");
+
+    let resp = match client.get(target)
+        .header("Origin", "null")
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return vec![],
+    };
+
+    let acao = resp.headers().get("access-control-allow-origin")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let allows_creds = resp.headers().get("access-control-allow-credentials")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("") == "true";
+
+    if acao != "null" {
+        return vec![];
+    }
+
+    let (severity, title) = if allows_creds {
+        (FindingSeverity::Critical, "CORS allows null origin with credentials")
+    } else {
+        (FindingSeverity::High, "CORS allows null origin")
+    };
+
+    vec![make_finding(
+        "VC-INFRA-002",
+        severity,
+        title.into(),
+        format!("CORS at {target} reflects null origin (credentials={allows_creds})"),
+        Evidence {
+            request: Some(request_record("GET", target, &[("Origin".into(), "null".into())])),
+            response: Some(capture_response(&resp, "GET", target)),
+            detail: format!("Access-Control-Allow-Origin: null, credentials: {allows_creds}"),
+        },
+        "Never reflect the null origin. Explicitly list allowed origins.".into(),
+    )]
+}
+
+pub async fn check_api_exposure(client: &Client, target: &str, safety: &Safety) -> Vec<Finding> {
+    let base = target.trim_end_matches('/');
+    let paths = [
+        "/api", "/api/", "/api/v1", "/api/users", "/api/products",
+        "/api/orders", "/api/settings", "/api/config", "/api/admin",
+        "/api/auth", "/api/me", "/api/profile", "/graphql", "/rest",
+    ];
+
+    let sensitive_re = regex::Regex::new(r#"(?i)"(password|email|token|secret|key)"\s*:"#).unwrap();
+    let mut findings = Vec::new();
+
+    for path in &paths {
+        let url = format!("{base}{path}");
+        let resp = match safe_get(client, &url, safety).await {
+            Some(r) => r,
+            None => continue,
+        };
+
+        if resp.status().as_u16() != 200 {
+            continue;
+        }
+
+        let content_type = resp.headers().get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        if !content_type.contains("json") {
+            continue;
+        }
+
+        let resp_rec = capture_response(&resp, "GET", &url);
+        let body = resp.text().await.unwrap_or_default();
+        let has_sensitive = sensitive_re.is_match(&body);
+
+        let (severity, vcvd, title) = if has_sensitive {
+            (FindingSeverity::Critical, "VC-DATA-001", format!("API exposes sensitive data without auth: {path}"))
+        } else {
+            (FindingSeverity::High, "VC-API-001", format!("Unauthenticated API endpoint: {path}"))
+        };
+
+        let body_snippet = if body.len() > 500 { &body[..500] } else { &body };
+
+        let mut rr = resp_rec;
+        rr.body = Some(truncate_body(&body));
+
+        findings.push(make_finding(
+            vcvd,
+            severity,
+            title,
+            format!("API endpoint {url} returns JSON without authentication"),
+            Evidence {
+                request: Some(request_record("GET", &url, &[])),
+                response: Some(rr),
+                detail: format!("Response (first 500 chars): {body_snippet}"),
+            },
+            "Protect API endpoints with authentication middleware. Never expose data endpoints without auth.".into(),
+        ));
+    }
+    findings
+}
+
+pub async fn check_permissions_policy(client: &Client, target: &str, safety: &Safety) -> Vec<Finding> {
+    let resp = match safe_get(client, target, safety).await {
+        Some(r) => r,
+        None => return vec![],
+    };
+
+    let headers: Vec<String> = resp.headers().keys().map(|k| k.to_string().to_lowercase()).collect();
+    let has_permissions = headers.iter().any(|h| h == "permissions-policy");
+    let has_feature = headers.iter().any(|h| h == "feature-policy");
+
+    if has_permissions || has_feature {
+        return vec![];
+    }
+
+    vec![make_finding(
+        "VC-INFRA-003",
+        FindingSeverity::Low,
+        "Missing Permissions-Policy header".into(),
+        format!("Response from {target} is missing both Permissions-Policy and Feature-Policy headers"),
+        Evidence {
+            request: Some(request_record("GET", target, &[])),
+            response: Some(capture_response(&resp, "GET", target)),
+            detail: "Neither Permissions-Policy nor Feature-Policy header found".into(),
+        },
+        "Add Permissions-Policy header to restrict browser features: Permissions-Policy: camera=(), microphone=(), geolocation=()".into(),
+    )]
+}
+
+pub async fn check_sequential_ids(client: &Client, target: &str, safety: &Safety) -> Vec<Finding> {
+    let base = target.trim_end_matches('/');
+    let paths = ["/api/users", "/api/products", "/api/orders", "/api/v1/users", "/api/v1/products"];
+
+    let mut findings = Vec::new();
+    for path in &paths {
+        let url = format!("{base}{path}");
+        let resp = match safe_get(client, &url, safety).await {
+            Some(r) => r,
+            None => continue,
+        };
+
+        if resp.status().as_u16() != 200 {
+            continue;
+        }
+
+        let content_type = resp.headers().get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        if !content_type.contains("json") {
+            continue;
+        }
+
+        let resp_rec = capture_response(&resp, "GET", &url);
+        let body = resp.text().await.unwrap_or_default();
+
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&body);
+        let arr = match parsed {
+            Ok(serde_json::Value::Array(ref items)) => items,
+            _ => continue,
+        };
+
+        let ids: Vec<i64> = arr.iter()
+            .filter_map(|item| item.get("id").and_then(|v| v.as_i64()))
+            .collect();
+
+        if ids.len() < 3 {
+            continue;
+        }
+
+        let mut sequential_count = 0usize;
+        for w in ids.windows(2) {
+            if (w[1] - w[0]).abs() == 1 {
+                sequential_count += 1;
+            }
+        }
+
+        if sequential_count < ids.len() - 1 {
+            continue;
+        }
+
+        let mut rr = resp_rec;
+        rr.body = Some(truncate_body(&body));
+
+        findings.push(make_finding(
+            "VC-DATA-001",
+            FindingSeverity::Medium,
+            format!("Sequential IDs in API response: {path}"),
+            format!("Endpoint {url} returns objects with sequential integer IDs without auth"),
+            Evidence {
+                request: Some(request_record("GET", &url, &[])),
+                response: Some(rr),
+                detail: format!("Found {} sequential IDs: {:?}", ids.len(), &ids[..ids.len().min(10)]),
+            },
+            "Use UUIDs instead of sequential integers for resource IDs, or ensure ownership checks on every request.".into(),
+        ));
+    }
+    findings
+}
+
+pub async fn check_robots_sitemap(client: &Client, target: &str, safety: &Safety) -> Vec<Finding> {
+    let base = target.trim_end_matches('/');
+    let mut findings = Vec::new();
+
+    let robots_url = format!("{base}/robots.txt");
+    let sitemap_url = format!("{base}/sitemap.xml");
+
+    let robots_resp = safe_get(client, &robots_url, safety).await;
+    let sitemap_resp = safe_get(client, &sitemap_url, safety).await;
+
+    let robots_ok = robots_resp.as_ref().map(|r| r.status().as_u16() == 200).unwrap_or(false);
+    let sitemap_ok = sitemap_resp.as_ref().map(|r| r.status().as_u16() == 200).unwrap_or(false);
+
+    if robots_ok {
+        let resp = robots_resp.unwrap();
+        let resp_rec = capture_response(&resp, "GET", &robots_url);
+        let body = resp.text().await.unwrap_or_default();
+
+        let disallow_re = regex::Regex::new(r"(?i)^Disallow:\s*(.+)$").unwrap();
+        let disallowed: Vec<String> = body.lines()
+            .filter_map(|line| disallow_re.captures(line))
+            .filter_map(|caps| caps.get(1).map(|m| m.as_str().trim().to_string()))
+            .filter(|p| !p.is_empty() && p != "/")
+            .collect();
+
+        if !disallowed.is_empty() {
+            let paths_str = disallowed.join(", ");
+            let mut rr = resp_rec;
+            rr.body = Some(truncate_body(&body));
+            findings.push(make_finding(
+                "VC-INFRA-003",
+                FindingSeverity::Low,
+                format!("robots.txt reveals paths: {paths_str}"),
+                format!("robots.txt at {robots_url} discloses potentially sensitive paths"),
+                Evidence {
+                    request: Some(request_record("GET", &robots_url, &[])),
+                    response: Some(rr),
+                    detail: format!("Disallowed paths: {paths_str}"),
+                },
+                "Review robots.txt entries — hidden paths may still be accessible to attackers.".into(),
+            ));
+        }
+    }
+
+    if !robots_ok && !sitemap_ok {
+        findings.push(make_finding(
+            "VC-INFRA-003",
+            FindingSeverity::Low,
+            "Missing robots.txt".into(),
+            format!("Neither robots.txt nor sitemap.xml found at {base}"),
+            Evidence {
+                request: Some(request_record("GET", &robots_url, &[])),
+                response: None,
+                detail: "Both /robots.txt and /sitemap.xml returned non-200 or failed".into(),
+            },
+            "Add a robots.txt to control crawler behavior and a sitemap.xml for SEO.".into(),
+        ));
+    }
+
+    findings
+}
+
 fn minimal_urlencode(input: &str) -> String {
     let mut out = String::with_capacity(input.len() * 3);
     for b in input.bytes() {
