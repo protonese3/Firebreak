@@ -34,6 +34,46 @@ static PRACTICES: &[BestPractice] = &[
         topic: "input-validation",
         content: include_str!("../../../knowledge/best-practices/input-validation.md"),
     },
+    BestPractice {
+        topic: "session-management",
+        content: include_str!("../../../knowledge/best-practices/session-management.md"),
+    },
+    BestPractice {
+        topic: "api-auth",
+        content: include_str!("../../../knowledge/best-practices/api-auth.md"),
+    },
+    BestPractice {
+        topic: "error-handling",
+        content: include_str!("../../../knowledge/best-practices/error-handling.md"),
+    },
+    BestPractice {
+        topic: "database-security",
+        content: include_str!("../../../knowledge/best-practices/database-security.md"),
+    },
+    BestPractice {
+        topic: "docker-security",
+        content: include_str!("../../../knowledge/best-practices/docker-security.md"),
+    },
+    BestPractice {
+        topic: "oauth-security",
+        content: include_str!("../../../knowledge/best-practices/oauth-security.md"),
+    },
+    BestPractice {
+        topic: "websocket-security",
+        content: include_str!("../../../knowledge/best-practices/websocket-security.md"),
+    },
+    BestPractice {
+        topic: "logging-security",
+        content: include_str!("../../../knowledge/best-practices/logging-security.md"),
+    },
+    BestPractice {
+        topic: "dependency-management",
+        content: include_str!("../../../knowledge/best-practices/dependency-management.md"),
+    },
+    BestPractice {
+        topic: "secrets-management",
+        content: include_str!("../../../knowledge/best-practices/secrets-management.md"),
+    },
 ];
 
 pub fn best_practice(topic: &str) -> ToolCallResult {

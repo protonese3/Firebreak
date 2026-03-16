@@ -12,10 +12,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
 regex = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 url = "2"
+sqlparser = "0.43"

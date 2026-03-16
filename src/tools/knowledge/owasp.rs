@@ -16,7 +16,9 @@ static CATEGORIES: &[OwaspCategory] = &[
         keywords: &[
             "access control", "authorization", "idor", "privilege", "permission",
             "rbac", "acl", "path traversal", "directory traversal", "cors", "csrf",
-            "forced browsing",
+            "forced browsing", "privilege escalation", "role bypass", "horizontal",
+            "vertical", "tenant", "multi-tenant", "rls", "row level security",
+            "insecure direct object",
         ],
         cwe_examples: &[200, 201, 352, 639, 862, 863],
         description: "Access control enforces policy such that users cannot act outside of their intended permissions. Failures typically lead to unauthorized information disclosure, modification, or destruction of data, or performing a business function outside the user's limits.",
@@ -27,6 +29,8 @@ static CATEGORIES: &[OwaspCategory] = &[
         keywords: &[
             "crypto", "encryption", "hash", "tls", "ssl", "certificate", "key",
             "password storage", "plaintext", "md5", "sha1", "weak cipher",
+            "bcrypt", "argon2", "sha256", "cleartext", "unencrypted",
+            "private key", "api key", "hardcoded", "secret", "base64 encode",
         ],
         cwe_examples: &[259, 261, 296, 310, 326, 327],
         description: "Failures related to cryptography which often lead to exposure of sensitive data. This includes use of weak cryptographic algorithms, insufficient key management, transmission of data in clear text, and improper certificate validation.",
@@ -37,6 +41,9 @@ static CATEGORIES: &[OwaspCategory] = &[
         keywords: &[
             "injection", "sql", "xss", "cross-site scripting", "command injection",
             "ldap", "xpath", "template injection", "nosql", "script",
+            "sanitize", "escape", "prepared statement", "parameterized",
+            "input validation", "user input", "untrusted", "reflected", "stored",
+            "dom-based",
         ],
         cwe_examples: &[20, 74, 75, 77, 78, 79, 89],
         description: "An application is vulnerable to injection when user-supplied data is not validated, filtered, or sanitized. This includes SQL injection, NoSQL injection, OS command injection, XSS, and other injection flaws that allow attackers to send hostile data to an interpreter.",
@@ -47,6 +54,8 @@ static CATEGORIES: &[OwaspCategory] = &[
         keywords: &[
             "design", "business logic", "threat model", "abuse case",
             "missing validation", "rate limit", "brute force",
+            "captcha", "account lockout", "enumeration", "workflow",
+            "race condition",
         ],
         cwe_examples: &[209, 256, 501, 522],
         description: "Insecure design is a broad category representing different weaknesses expressed as missing or ineffective control design. It focuses on risks related to design and architectural flaws, calling for more use of threat modeling, secure design patterns, and reference architectures.",
@@ -57,6 +66,8 @@ static CATEGORIES: &[OwaspCategory] = &[
         keywords: &[
             "misconfiguration", "default", "debug", "headers", "cors",
             "permissions", "unnecessary features", "stack trace", "error message",
+            "expose", "default password", "admin panel", "directory listing",
+            "verbose error", "phpinfo", "server header", "powered by",
         ],
         cwe_examples: &[2, 11, 13, 15, 16, 388],
         description: "The application is missing appropriate security hardening or has improperly configured permissions on cloud services. This includes unnecessary features enabled, default accounts with unchanged passwords, overly informative error handling, and missing security headers.",
@@ -67,6 +78,8 @@ static CATEGORIES: &[OwaspCategory] = &[
         keywords: &[
             "dependency", "library", "component", "outdated", "cve",
             "vulnerability", "package", "npm", "pip",
+            "npm audit", "known vulnerability", "end of life", "deprecated",
+            "patch",
         ],
         cwe_examples: &[1035, 1104],
         description: "Components such as libraries, frameworks, and other software modules run with the same privileges as the application. If a vulnerable component is exploited, it can facilitate serious data loss or server takeover.",
@@ -77,6 +90,8 @@ static CATEGORIES: &[OwaspCategory] = &[
         keywords: &[
             "authentication", "login", "session", "jwt", "token", "credential",
             "password", "brute force", "mfa", "oauth",
+            "weak password", "credential stuffing", "account takeover", "2fa",
+            "totp", "sso", "saml",
         ],
         cwe_examples: &[255, 259, 287, 288, 384],
         description: "Confirmation of the user's identity, authentication, and session management is critical to protect against authentication-related attacks. Weaknesses include permitting brute force attacks, weak passwords, missing MFA, and improper session management.",
@@ -87,6 +102,8 @@ static CATEGORIES: &[OwaspCategory] = &[
         keywords: &[
             "integrity", "ci/cd", "pipeline", "deserialization", "update",
             "supply chain", "signature verification",
+            "npm install", "pip install", "curl pipe bash", "auto-update",
+            "unsigned", "checksum", "package manager",
         ],
         cwe_examples: &[345, 353, 426, 494, 502],
         description: "Software and data integrity failures relate to code and infrastructure that does not protect against integrity violations. This includes insecure CI/CD pipelines, auto-update without verification, insecure deserialization, and use of untrusted plugins or libraries.",
@@ -96,6 +113,8 @@ static CATEGORIES: &[OwaspCategory] = &[
         name: "Security Logging and Monitoring Failures",
         keywords: &[
             "logging", "monitoring", "audit", "alert", "detection", "incident", "log",
+            "siem", "splunk", "elk", "anomaly", "breach detection",
+            "incident response",
         ],
         cwe_examples: &[117, 223, 532, 778],
         description: "Without logging and monitoring, breaches cannot be detected. Insufficient logging, detection, monitoring, and active response allows attackers to further attack systems, maintain persistence, pivot to more systems, and tamper with or extract data.",
@@ -106,6 +125,7 @@ static CATEGORIES: &[OwaspCategory] = &[
         keywords: &[
             "ssrf", "server-side request", "fetch url", "internal",
             "metadata", "cloud metadata",
+            "169.254", "localhost", "private ip", "webhook", "callback",
         ],
         cwe_examples: &[918],
         description: "SSRF flaws occur when a web application fetches a remote resource without validating the user-supplied URL. It allows an attacker to coerce the application to send a crafted request to an unexpected destination, even when protected by a firewall or VPN.",

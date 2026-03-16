@@ -8,6 +8,7 @@ struct ChecklistItem {
 
 static AVAILABLE_COMPONENTS: &[&str] = &[
     "nextjs", "supabase", "react", "express", "django", "docker", "postgresql",
+    "flask", "rails", "vue", "aws", "mongodb", "vercel",
 ];
 
 static ITEMS: &[ChecklistItem] = &[
@@ -94,6 +95,78 @@ static ITEMS: &[ChecklistItem] = &[
     ChecklistItem { component: "postgresql", priority: "P2", item: "Check for unused database extensions" },
     ChecklistItem { component: "postgresql", priority: "P2", item: "Verify statement logging for audit trail" },
     ChecklistItem { component: "postgresql", priority: "P2", item: "Check for row-level audit triggers on sensitive tables" },
+
+    // ── flask ──
+    ChecklistItem { component: "flask", priority: "P0", item: "Set SECRET_KEY from environment, not hardcoded" },
+    ChecklistItem { component: "flask", priority: "P0", item: "Disable debug mode in production (app.debug = False)" },
+    ChecklistItem { component: "flask", priority: "P0", item: "Use CSRF protection (Flask-WTF)" },
+    ChecklistItem { component: "flask", priority: "P1", item: "Validate all input with marshmallow or pydantic" },
+    ChecklistItem { component: "flask", priority: "P1", item: "Set secure session cookie flags" },
+    ChecklistItem { component: "flask", priority: "P1", item: "Use parameterized queries with SQLAlchemy" },
+    ChecklistItem { component: "flask", priority: "P1", item: "Configure CORS with flask-cors (specific origins)" },
+    ChecklistItem { component: "flask", priority: "P2", item: "Implement rate limiting with flask-limiter" },
+    ChecklistItem { component: "flask", priority: "P2", item: "Use Content-Security-Policy headers" },
+    ChecklistItem { component: "flask", priority: "P2", item: "Review Jinja2 templates for autoescape" },
+
+    // ── rails ──
+    ChecklistItem { component: "rails", priority: "P0", item: "Keep secret_key_base out of source code" },
+    ChecklistItem { component: "rails", priority: "P0", item: "Enable CSRF protection (protect_from_forgery)" },
+    ChecklistItem { component: "rails", priority: "P0", item: "Use strong parameters (never permit all)" },
+    ChecklistItem { component: "rails", priority: "P1", item: "Enable force_ssl in production" },
+    ChecklistItem { component: "rails", priority: "P1", item: "Use parameterized queries (avoid raw SQL with interpolation)" },
+    ChecklistItem { component: "rails", priority: "P1", item: "Validate and sanitize file uploads with Active Storage" },
+    ChecklistItem { component: "rails", priority: "P1", item: "Configure CORS with rack-cors" },
+    ChecklistItem { component: "rails", priority: "P2", item: "Review mass assignment protection" },
+    ChecklistItem { component: "rails", priority: "P2", item: "Use Content-Security-Policy via secure_headers gem" },
+    ChecklistItem { component: "rails", priority: "P2", item: "Audit gem dependencies with bundler-audit" },
+
+    // ── vue ──
+    ChecklistItem { component: "vue", priority: "P0", item: "Never use v-html with user input" },
+    ChecklistItem { component: "vue", priority: "P0", item: "No secrets in client-side code (check .env files with VITE_ prefix)" },
+    ChecklistItem { component: "vue", priority: "P0", item: "Validate all input before sending to API" },
+    ChecklistItem { component: "vue", priority: "P1", item: "Implement route guards with navigation guards AND server-side checks" },
+    ChecklistItem { component: "vue", priority: "P1", item: "Use CSRF tokens for state-changing requests" },
+    ChecklistItem { component: "vue", priority: "P1", item: "Configure CSP headers on the hosting server" },
+    ChecklistItem { component: "vue", priority: "P2", item: "Review third-party Vue plugins for security" },
+    ChecklistItem { component: "vue", priority: "P2", item: "Disable source maps in production" },
+    ChecklistItem { component: "vue", priority: "P2", item: "Use Subresource Integrity for CDN scripts" },
+    ChecklistItem { component: "vue", priority: "P2", item: "Check for XSS in dynamic component rendering" },
+
+    // ── aws ──
+    ChecklistItem { component: "aws", priority: "P0", item: "Never commit AWS credentials to source code" },
+    ChecklistItem { component: "aws", priority: "P0", item: "Use IAM roles instead of access keys where possible" },
+    ChecklistItem { component: "aws", priority: "P0", item: "Enable MFA on root account and all IAM users" },
+    ChecklistItem { component: "aws", priority: "P0", item: "S3 buckets: block public access by default" },
+    ChecklistItem { component: "aws", priority: "P1", item: "Enable CloudTrail logging in all regions" },
+    ChecklistItem { component: "aws", priority: "P1", item: "Use VPC security groups as allowlists, not denylists" },
+    ChecklistItem { component: "aws", priority: "P1", item: "Enable encryption at rest for RDS, S3, EBS" },
+    ChecklistItem { component: "aws", priority: "P1", item: "Use Secrets Manager or SSM Parameter Store for secrets" },
+    ChecklistItem { component: "aws", priority: "P2", item: "Enable AWS Config for compliance monitoring" },
+    ChecklistItem { component: "aws", priority: "P2", item: "Review IAM policies for least privilege" },
+
+    // ── mongodb ──
+    ChecklistItem { component: "mongodb", priority: "P0", item: "Enable authentication (never run without --auth)" },
+    ChecklistItem { component: "mongodb", priority: "P0", item: "Change default port and bind to specific IPs" },
+    ChecklistItem { component: "mongodb", priority: "P0", item: "Use parameterized queries (avoid $where with user input)" },
+    ChecklistItem { component: "mongodb", priority: "P1", item: "Enable TLS for all connections" },
+    ChecklistItem { component: "mongodb", priority: "P1", item: "Use field-level redaction for sensitive data" },
+    ChecklistItem { component: "mongodb", priority: "P1", item: "Validate input types strictly (prevent operator injection)" },
+    ChecklistItem { component: "mongodb", priority: "P1", item: "Enable audit logging" },
+    ChecklistItem { component: "mongodb", priority: "P2", item: "Use MongoDB Atlas with VPC peering for production" },
+    ChecklistItem { component: "mongodb", priority: "P2", item: "Configure connection pool limits" },
+    ChecklistItem { component: "mongodb", priority: "P2", item: "Review index usage to prevent DoS via slow queries" },
+
+    // ── vercel ──
+    ChecklistItem { component: "vercel", priority: "P0", item: "Check environment variables aren't exposed to client (no NEXT_PUBLIC_ for secrets)" },
+    ChecklistItem { component: "vercel", priority: "P0", item: "Verify Vercel Functions have auth middleware" },
+    ChecklistItem { component: "vercel", priority: "P0", item: "Review vercel.json for exposed routes" },
+    ChecklistItem { component: "vercel", priority: "P1", item: "Set security headers in vercel.json or middleware" },
+    ChecklistItem { component: "vercel", priority: "P1", item: "Enable Vercel Web Analytics securely (no PII)" },
+    ChecklistItem { component: "vercel", priority: "P1", item: "Use Edge Middleware for auth, not just client-side" },
+    ChecklistItem { component: "vercel", priority: "P2", item: "Review build logs for leaked secrets" },
+    ChecklistItem { component: "vercel", priority: "P2", item: "Configure CORS in API routes" },
+    ChecklistItem { component: "vercel", priority: "P2", item: "Use Vercel's built-in DDoS protection settings" },
+    ChecklistItem { component: "vercel", priority: "P2", item: "Check for exposed _next/ or .vercel/ directories" },
 
     // ── general ──
     ChecklistItem { component: "general", priority: "P0", item: "Check for hardcoded credentials in source code" },

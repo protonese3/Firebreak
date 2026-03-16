@@ -19,7 +19,8 @@ pub async fn call(name: &str, args: &Value, state: &AppState) -> ToolCallResult 
         | "firebreak_check_pattern"
         | "firebreak_explain_vuln"
         | "firebreak_security_checklist"
-        | "firebreak_owasp_check" => call_knowledge(name, args),
+        | "firebreak_owasp_check"
+        | "firebreak_analyze_rls" => call_knowledge(name, args),
 
         "firebreak_scan_quick"
         | "firebreak_scan_full"
@@ -62,6 +63,7 @@ fn call_knowledge(name: &str, args: &Value) -> ToolCallResult {
             knowledge::security_checklist(&stack)
         }
         "firebreak_owasp_check" => knowledge::owasp_check(str_arg(args, "description")),
+        "firebreak_analyze_rls" => crate::rls::analyze_rls_tool(str_arg(args, "sql")),
         _ => unreachable!(),
     }
 }
@@ -133,6 +135,17 @@ fn knowledge_definitions() -> Vec<ToolDefinition> {
                     "description": { "type": "string", "description": "Vulnerability description to classify" }
                 },
                 "required": ["description"]
+            }),
+        },
+        ToolDefinition {
+            name: "firebreak_analyze_rls".into(),
+            description: "Analyzes SQL migrations or schema files for RLS policy issues. Pass the SQL content and get back a list of findings.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "sql": { "type": "string", "description": "SQL content to analyze (migrations, schema, policies)" }
+                },
+                "required": ["sql"]
             }),
         },
     ]
