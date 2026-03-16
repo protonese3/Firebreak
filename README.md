@@ -1,8 +1,8 @@
 <p align="center">
-  <h1 align="center">FIREBREAK</h1>
-  <p align="center">
-    <strong>The security MCP server that turns your AI into a penetration tester.</strong>
-  </p>
+  <img src="assets/logo.png" alt="Firebreak" width="400">
+  <br><br>
+  <strong>The security MCP server that turns your AI into a penetration tester.</strong>
+  <br>
   <p align="center">
     <a href="#quick-start">Quick Start</a> &middot;
     <a href="#how-it-works">How It Works</a> &middot;
@@ -98,53 +98,9 @@ It should list the Firebreak tools. Then try: *"Scan https://httpbin.org for sec
 
 ## How It Works
 
-```
-┌─────────────────────────┐
-│  Claude / Cursor / Any  │
-│     MCP Client          │
-└────────┬────────────────┘
-         │
-         │  MCP Protocol (JSON-RPC 2.0 over HTTP)
-         │
-         ▼
-┌─────────────────────────────────────────────────────┐
-│                FIREBREAK MCP SERVER                  │
-│                                                      │
-│  ┌──────────────────────────────────────────────┐   │
-│  │              TOOL ROUTER                      │   │
-│  │                                               │   │
-│  │  knowledge_*  ──▶  Knowledge Base (VCVD)     │   │
-│  │  scan_*       ──▶  Scan Engine               │   │
-│  │  analyze_*    ──▶  Analysis Engine            │   │
-│  │  report_*     ──▶  Report Generator           │   │
-│  └──────────────────────────────────────────────┘   │
-│                         │                            │
-│  ┌──────────────────────▼───────────────────────┐   │
-│  │           EXECUTION ENGINE                    │   │
-│  │                                               │   │
-│  │  HTTP Client    ─  Request crafting           │   │
-│  │  Header Check   ─  HSTS, CSP, X-Frame        │   │
-│  │  Auth Tester    ─  Missing auth, IDOR         │   │
-│  │  Injection      ─  SQLi, XSS, SSTI           │   │
-│  │  CORS Prober    ─  Origin reflection          │   │
-│  │  Path Scanner   ─  .env, .git, admin panels   │   │
-│  │  TLS Checker    ─  Redirect, protocol         │   │
-│  │  Frontend       ─  Source maps, secrets       │   │
-│  │  Info Leak      ─  Stack traces, versions     │   │
-│  └──────────────────────┬───────────────────────┘   │
-│                         │                            │
-│  ┌─────────┐   ┌───────▼────┐   ┌──────────────┐   │
-│  │ Safety  │   │  SQLite    │   │   Report     │   │
-│  │ Layer   │   │  Store     │   │   Engine     │   │
-│  │         │   │            │   │              │   │
-│  │ Rate    │   │ Scans      │   │ JSON         │   │
-│  │ Scope   │   │ Findings   │   │ Markdown     │   │
-│  │ Consent │   │ Audit Log  │   │ HTML         │   │
-│  │ Audit   │   │            │   │ Executive    │   │
-│  └─────────┘   └────────────┘   └──────────────┘   │
-│                                                      │
-└──────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="assets/howitworks.png" alt="How Firebreak Works" width="700">
+</p>
 
 **The AI is the orchestrator.** Firebreak doesn't decide what to test — it provides the tools. The AI picks the strategy based on what the user asks and what it finds along the way.
 
